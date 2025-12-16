@@ -1,6 +1,8 @@
 # Generative Optogenetics: Latent Controller + CMA-ES
 ## Evolving AI Controller To Be Upgraded Soon
 
+![cover](media/cover.png)
+
 A minimal sandbox for **generative optogenetic control** with opsin desensitization, time-integrated error objectives, and evolutionary optimization.
 
 ## Overview
