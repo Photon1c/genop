@@ -1,0 +1,13 @@
+{
+  "root": ".",
+  "clean_urls": true,
+  "routes": {
+    "/**": "dashboard.html"
+  },
+  "headers": {
+    "/**": {
+      "Cache-Control": "no-cache, no-store, must-revalidate"
+    }
+  }
+}
+

@@ -5,55 +5,465 @@
     <title>Genop Dashboard - Optogenetic Simulation</title>
     <style>
         body { margin: 0; background: #1a1a1a; font-family: 'Segoe UI', Arial, sans-serif; color: #fff; }
-        #container { max-width: 1200px; margin: 20px auto; padding: 20px; }
-        #dashboard { width: 400px; height: 400px; margin: 0 auto 20px; border: 2px solid #444; border-radius: 8px; position: relative; background: #000; }
-        canvas { width: 100%; height: 100%; display: block; }
-        #controls { position: absolute; bottom: 10px; left: 10px; display: flex; gap: 10px; }
+        #container { max-width: 1600px; margin: 20px auto; padding: 20px; }
+        #visualization-section { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-bottom: 30px; align-items: start; }
+        @media (max-width: 1200px) {
+            #visualization-section { grid-template-columns: 1fr; }
+            #description-panel { order: 2; }
+            #dashboard-wrapper { order: 1; }
+        }
+        #description-panel { background: #2a2a2a; padding: 25px; border-radius: 8px; border: 1px solid #444; max-height: 500px; overflow-y: auto; }
+        #description-panel::-webkit-scrollbar { width: 8px; }
+        #description-panel::-webkit-scrollbar-track { background: #1a1a1a; border-radius: 4px; }
+        #description-panel::-webkit-scrollbar-thumb { background: #4a9eff; border-radius: 4px; }
+        #description-panel h2 { color: #4a9eff; margin-top: 0; margin-bottom: 12px; font-size: 18px; border-bottom: 1px solid #444; padding-bottom: 8px; }
+        #description-panel h2:first-child { margin-top: 0; }
+        #description-panel p { color: #ccc; line-height: 1.8; margin-bottom: 15px; font-size: 14px; }
+        #description-panel .highlight { color: #4a9eff; font-weight: bold; }
+        #description-panel ul { color: #ccc; line-height: 2; padding-left: 20px; margin-bottom: 15px; }
+        #description-panel li { margin-bottom: 8px; }
+        #dashboard-wrapper { position: relative; }
+        #dashboard { width: 100%; height: 500px; border: 2px solid #444; border-radius: 8px; position: relative; background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%); box-shadow: 0 8px 32px rgba(0,0,0,0.5), inset 0 0 100px rgba(74, 158, 255, 0.05); overflow: hidden; }
+        #dashboard canvas { width: 100% !important; height: 100% !important; display: block; position: absolute; top: 0; left: 0; }
+        #controls { position: absolute; bottom: 10px; left: 10px; display: flex; gap: 10px; z-index: 10; }
         #controls button { padding: 8px 16px; background: #4a9eff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
         #controls button:hover { background: #3a8eef; }
         #metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 20px; }
         .metric-card { background: #2a2a2a; padding: 15px; border-radius: 8px; border: 1px solid #444; }
-        .metric-label { font-size: 12px; color: #aaa; text-transform: uppercase; margin-bottom: 5px; }
+        .metric-label { font-size: 12px; color: #aaa; text-transform: uppercase; margin-bottom: 5px; display: flex; align-items: center; justify-content: space-between; }
         .metric-value { font-size: 24px; font-weight: bold; color: #4a9eff; }
         h1 { text-align: center; margin-bottom: 10px; color: #4a9eff; }
         .subtitle { text-align: center; color: #aaa; margin-bottom: 30px; font-size: 14px; }
+        
+        /* Control panels */
+        #control-panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-top: 20px; }
+        .control-panel { background: #2a2a2a; padding: 20px; border-radius: 8px; border: 1px solid #444; }
+        .control-panel h3 { margin-top: 0; color: #4a9eff; font-size: 16px; }
+        .control-group { margin-bottom: 20px; }
+        .control-group label { display: block; font-size: 12px; color: #aaa; margin-bottom: 8px; }
+        .control-group .slider-container { display: flex; align-items: center; gap: 10px; }
+        .control-group input[type="range"] { flex: 1; height: 6px; background: #444; border-radius: 3px; outline: none; }
+        .control-group input[type="range"]::-webkit-slider-thumb { appearance: none; width: 16px; height: 16px; background: #4a9eff; border-radius: 50%; cursor: pointer; }
+        .control-group input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; background: #4a9eff; border-radius: 50%; cursor: pointer; border: none; }
+        .control-group .value-display { min-width: 60px; text-align: right; color: #4a9eff; font-weight: bold; font-size: 14px; }
+        .control-group select { width: 100%; padding: 8px; background: #333; color: #fff; border: 1px solid #444; border-radius: 4px; font-size: 14px; }
+        .control-group input[type="checkbox"] { width: 20px; height: 20px; cursor: pointer; }
+        .control-group .checkbox-label { display: flex; align-items: center; gap: 10px; }
+        .collapsible { cursor: pointer; user-select: none; }
+        .collapsible::before { content: '▼ '; display: inline-block; transition: transform 0.2s; }
+        .collapsible.collapsed::before { transform: rotate(-90deg); }
+        .collapsible-content { max-height: 1000px; overflow: hidden; transition: max-height 0.3s ease-out; }
+        .collapsible-content.collapsed { max-height: 0; }
+        
+        /* Tooltip styles */
+        .tooltip-wrapper { position: relative; display: inline-block; }
+        .tooltip-icon { 
+            display: inline-block; 
+            width: 16px; 
+            height: 16px; 
+            line-height: 16px; 
+            text-align: center; 
+            background: #4a9eff; 
+            color: #fff; 
+            border-radius: 50%; 
+            font-size: 11px; 
+            font-weight: bold; 
+            cursor: help; 
+            margin-left: 6px;
+            vertical-align: middle;
+            transition: background 0.2s;
+        }
+        .tooltip-icon:hover { background: #3a8eef; }
+        .tooltip-text {
+            visibility: hidden;
+            opacity: 0;
+            position: absolute;
+            z-index: 1000;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #2a2a2a;
+            color: #fff;
+            padding: 10px 14px;
+            border-radius: 6px;
+            font-size: 12px;
+            line-height: 1.5;
+            white-space: normal;
+            width: 250px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            border: 1px solid #4a9eff;
+            pointer-events: none;
+            transition: opacity 0.3s, visibility 0.3s;
+        }
+        .tooltip-text::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 6px solid transparent;
+            border-top-color: #4a9eff;
+        }
+        .tooltip-wrapper:hover .tooltip-text {
+            visibility: visible;
+            opacity: 1;
+        }
+        .control-group label { display: flex; align-items: center; flex-wrap: wrap; }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Optional: CMA-ES for browser-based optimization -->
+    <script src="https://cdn.jsdelivr.net/npm/cma-es@1.0.0/dist/cma-es.min.js"></script>
 </head>
 <body>
     <div id="container">
         <h1>Generative Optogenetics Dashboard</h1>
         <p class="subtitle">Real-time visualization of petri dish expression dynamics</p>
+        
+        <div id="visualization-section">
+            <div id="description-panel">
+                <h2>What You're Seeing</h2>
+                <p>
+                    This is a <span class="highlight">simulated petri dish</span> where we're trying to control gene expression patterns using light. 
+                    Think of it like a biological "etch-a-sketch" - we shine light on cells to make them express genes, creating patterns.
+                </p>
+                
+                <h2>The Challenge</h2>
+                <p>
+                    Our goal is to create a <span class="highlight">ring-shaped pattern</span> (shown in blue overlay) by carefully controlling where and when we shine light. 
+                    But there's a catch: too much light damages the cells, and if we keep the light on constantly, the cells "get tired" and stop responding.
+                </p>
+                
+                <h2>How to Read the Visualization</h2>
+                <ul>
+                    <li><span class="highlight">Red areas</span> = Low gene expression (cells are "off")</li>
+                    <li><span class="highlight">Green areas</span> = High gene expression (cells are "on")</li>
+                    <li><span class="highlight">Blue overlay</span> = Target pattern we're trying to match</li>
+                    <li>The <span class="highlight">brighter the green</span>, the more the cell is expressing</li>
+                </ul>
+                
+                <h2>What Makes This Hard?</h2>
+                <p>
+                    Unlike a simple light switch, cells have <span class="highlight">memory and limits</span>:
+                </p>
+                <ul>
+                    <li>Expression naturally fades over time (like a battery draining)</li>
+                    <li>Too much light causes damage (phototoxicity)</li>
+                    <li>Continuous light makes cells less responsive (desensitization)</li>
+                    <li>Expression spreads between neighboring cells (diffusion)</li>
+                </ul>
+                
+                <h2>Try This</h2>
+                <p>
+                    Watch how the <span class="highlight">greedy controller</span> quickly creates the pattern but then loses it. 
+                    Try switching to the <span class="highlight">pulse controller</span> and adjust the duty cycle - you'll see how 
+                    pulsing (turning light on and off) helps maintain the pattern while giving cells time to recover!
+                </p>
+            </div>
+            
+            <div id="dashboard-wrapper">
         <div id="dashboard">
             <div id="controls">
                 <button id="resetBtn" onclick="resetSim()">Reset</button>
                 <button id="pauseBtn" onclick="togglePause()">Pause</button>
+                    </div>
+                </div>
             </div>
         </div>
         <div id="metrics">
             <div class="metric-card">
-                <div class="metric-label">Time Step</div>
+                <div class="metric-label">
+                    Time Step
+                    <span class="tooltip-wrapper">
+                        <span class="tooltip-icon">ℹ</span>
+                        <span class="tooltip-text">Current simulation step number. Increases each time the environment updates. Episode ends at max_steps or when health reaches 0.</span>
+                    </span>
+                </div>
                 <div class="metric-value" id="metric-t">0</div>
             </div>
             <div class="metric-card">
-                <div class="metric-label">MSE</div>
+                <div class="metric-label">
+                    MSE
+                    <span class="tooltip-wrapper">
+                        <span class="tooltip-icon">ℹ</span>
+                        <span class="tooltip-text">Mean Squared Error between current expression and target pattern. Lower is better. Measures how well the controller matches the desired phenotype.</span>
+                    </span>
+                </div>
                 <div class="metric-value" id="metric-mse">0.0000</div>
             </div>
             <div class="metric-card">
-                <div class="metric-label">Energy</div>
+                <div class="metric-label">
+                    Energy
+                    <span class="tooltip-wrapper">
+                        <span class="tooltip-icon">ℹ</span>
+                        <span class="tooltip-text">Average light intensity across all cells. Higher values = more illumination = higher energy cost. Controllers should minimize this while achieving goals.</span>
+                    </span>
+                </div>
                 <div class="metric-value" id="metric-energy">0.000</div>
             </div>
             <div class="metric-card">
-                <div class="metric-label">Toxicity</div>
+                <div class="metric-label">
+                    Toxicity
+                    <span class="tooltip-wrapper">
+                        <span class="tooltip-icon">ℹ</span>
+                        <span class="tooltip-text">Average phototoxicity (1 - health). Higher values = more cell damage. Accumulates with light exposure. Controllers must balance expression goals with health preservation.</span>
+                    </span>
+                </div>
                 <div class="metric-value" id="metric-tox">0.000</div>
             </div>
             <div class="metric-card">
-                <div class="metric-label">Reward</div>
+                <div class="metric-label">
+                    Reward
+                    <span class="tooltip-wrapper">
+                        <span class="tooltip-icon">ℹ</span>
+                        <span class="tooltip-text">Combined reward signal: -(MSE + energy_cost + toxicity_cost). Higher (less negative) is better. Time-integrated version values maintenance over time.</span>
+                    </span>
+                </div>
                 <div class="metric-value" id="metric-reward">0.0000</div>
             </div>
             <div class="metric-card">
-                <div class="metric-label">Sensitivity</div>
+                <div class="metric-label">
+                    Sensitivity
+                    <span class="tooltip-wrapper">
+                        <span class="tooltip-icon">ℹ</span>
+                        <span class="tooltip-text">Average opsin sensitivity across all cells. Decreases with activation, recovers during dark periods. Lower values indicate desensitization from continuous illumination.</span>
+                    </span>
+                </div>
                 <div class="metric-value" id="metric-sens">1.000</div>
+            </div>
+        </div>
+        
+        <div id="control-panels">
+            <div class="control-panel">
+                <h3 class="collapsible" onclick="toggleCollapse(this)">Simulation Controls</h3>
+                <div class="collapsible-content">
+                    <div class="control-group">
+                        <label>Controller Type
+                            <span class="tooltip-wrapper">
+                                <span class="tooltip-icon">ℹ</span>
+                                <span class="tooltip-text">Select the control strategy: Greedy (illuminates where target > expression), Random (random light fields), or Pulse (periodic pulsing with duty cycle).</span>
+                            </span>
+                        </label>
+                        <select id="controller-type" onchange="updateController()">
+                            <option value="greedy">Greedy</option>
+                            <option value="random">Random</option>
+                            <option value="pulse">Pulse (Simple)</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <label>Max Steps: <span class="value-display" id="max-steps-value">200</span>
+                            <span class="tooltip-wrapper">
+                                <span class="tooltip-icon">ℹ</span>
+                                <span class="tooltip-text">Maximum number of simulation steps before episode ends. Higher values allow longer experiments but may slow down visualization.</span>
+                            </span>
+                        </label>
+                        <div class="slider-container">
+                            <input type="range" id="max-steps" min="50" max="1000" value="200" step="10" oninput="updateMaxSteps(this.value)">
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label>Step Speed (ms): <span class="value-display" id="step-interval-value">50</span>
+                            <span class="tooltip-wrapper">
+                                <span class="tooltip-icon">ℹ</span>
+                                <span class="tooltip-text">Time delay between simulation steps in milliseconds. Lower values = faster animation. Higher values = slower, easier to observe.</span>
+                            </span>
+                        </label>
+                        <div class="slider-container">
+                            <input type="range" id="step-interval" min="10" max="500" value="50" step="10" oninput="updateStepInterval(this.value)">
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="health-termination" checked onchange="updateHealthTermination()">
+                            <span>Terminate on health = 0
+                                <span class="tooltip-wrapper">
+                                    <span class="tooltip-icon">ℹ</span>
+                                    <span class="tooltip-text">If enabled, simulation stops when any cell's health reaches 0 (complete phototoxicity). Disable to run full episode regardless of health.</span>
+                                </span>
+                            </span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="control-panel">
+                <h3 class="collapsible" onclick="toggleCollapse(this)">Desensitization</h3>
+                <div class="collapsible-content">
+                    <div class="control-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="enable-desensitization" checked onchange="updateDesensitization()">
+                            <span>Enable Desensitization
+                                <span class="tooltip-wrapper">
+                                    <span class="tooltip-icon">ℹ</span>
+                                    <span class="tooltip-text">When enabled, opsin sensitivity decreases with cumulative light activation and recovers slowly. This forces genuine pulse scheduling strategies.</span>
+                                </span>
+                            </span>
+                        </label>
+                    </div>
+                    <div class="control-group">
+                        <label>Desensitization Rate: <span class="value-display" id="desense-k-value">1.25</span>
+                            <span class="tooltip-wrapper">
+                                <span class="tooltip-icon">ℹ</span>
+                                <span class="tooltip-text">How quickly opsin sensitivity decreases with activation. Higher values = faster burnout. Forces controllers to use sparse pulsing instead of continuous illumination.</span>
+                            </span>
+                        </label>
+                        <div class="slider-container">
+                            <input type="range" id="desense-k" min="0" max="5" value="1.25" step="0.05" oninput="updateDesenseK(this.value)">
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label>Recovery Rate: <span class="value-display" id="recover-k-value">0.06</span>
+                            <span class="tooltip-wrapper">
+                                <span class="tooltip-icon">ℹ</span>
+                                <span class="tooltip-text">How quickly opsin sensitivity recovers during dark periods. Higher values = faster recovery. Creates recovery windows that pulse controllers can exploit.</span>
+                            </span>
+                        </label>
+                        <div class="slider-container">
+                            <input type="range" id="recover-k" min="0" max="0.5" value="0.06" step="0.01" oninput="updateRecoverK(this.value)">
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label>Sensitivity Floor: <span class="value-display" id="sens-floor-value">0.15</span>
+                            <span class="tooltip-wrapper">
+                                <span class="tooltip-icon">ℹ</span>
+                                <span class="tooltip-text">Minimum residual opsin sensitivity (cannot go below this). Lower values allow more severe burnout. Higher values preserve some responsiveness even after heavy activation.</span>
+                            </span>
+                        </label>
+                        <div class="slider-container">
+                            <input type="range" id="sens-floor" min="0" max="1" value="0.15" step="0.05" oninput="updateSensFloor(this.value)">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="control-panel">
+                <h3 class="collapsible" onclick="toggleCollapse(this)">Dynamics Parameters</h3>
+                <div class="collapsible-content">
+                    <div class="control-group">
+                        <label>Toxicity Rate: <span class="value-display" id="tox-k-value">0.25</span>
+                            <span class="tooltip-wrapper">
+                                <span class="tooltip-icon">ℹ</span>
+                                <span class="tooltip-text">Rate at which light exposure damages cell health. Higher values = faster phototoxicity accumulation. Controllers must balance expression goals with health preservation.</span>
+                            </span>
+                        </label>
+                        <div class="slider-container">
+                            <input type="range" id="tox-k" min="0" max="1" value="0.25" step="0.05" oninput="updateToxK(this.value)">
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label>k_on (Expression Gain): <span class="value-display" id="k-on-value">2.0</span>
+                            <span class="tooltip-wrapper">
+                                <span class="tooltip-icon">ℹ</span>
+                                <span class="tooltip-text">Gain factor for light-driven expression increase. Higher values = faster expression rise in response to illumination. Controls how quickly target patterns can be achieved.</span>
+                            </span>
+                        </label>
+                        <div class="slider-container">
+                            <input type="range" id="k-on" min="0.5" max="5" value="2.0" step="0.1" oninput="updateKOn(this.value)">
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label>k_off (Decay Rate): <span class="value-display" id="k-off-value">0.8</span>
+                            <span class="tooltip-wrapper">
+                                <span class="tooltip-icon">ℹ</span>
+                                <span class="tooltip-text">Natural decay rate of expression back to baseline. Higher values = faster decay. Creates a maintenance challenge: expression must be continuously reinforced or it fades.</span>
+                            </span>
+                        </label>
+                        <div class="slider-container">
+                            <input type="range" id="k-off" min="0.1" max="2" value="0.8" step="0.1" oninput="updateKOff(this.value)">
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label>Diffusion: <span class="value-display" id="diff-value">0.15</span>
+                            <span class="tooltip-wrapper">
+                                <span class="tooltip-icon">ℹ</span>
+                                <span class="tooltip-text">Spatial coupling strength between neighboring cells. Higher values = more expression spreading/blurring. Creates spatial correlations and makes precise patterns harder to maintain.</span>
+                            </span>
+                        </label>
+                        <div class="slider-container">
+                            <input type="range" id="diff" min="0" max="0.5" value="0.15" step="0.01" oninput="updateDiff(this.value)">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="control-panel">
+                <h3 class="collapsible" onclick="toggleCollapse(this)">Pulse Controller (if selected)</h3>
+                <div class="collapsible-content">
+                    <div class="control-group">
+                        <label>Pulse Period: <span class="value-display" id="pulse-period-value">6</span>
+                            <span class="tooltip-wrapper">
+                                <span class="tooltip-icon">ℹ</span>
+                                <span class="tooltip-text">Number of steps in one pulse cycle. Period = 6 means pulse repeats every 6 steps. Longer periods = more time for recovery between pulses, but slower correction.</span>
+                            </span>
+                        </label>
+                        <div class="slider-container">
+                            <input type="range" id="pulse-period" min="1" max="20" value="6" step="1" oninput="updatePulsePeriod(this.value)">
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label>Duty Cycle: <span class="value-display" id="duty-cycle-value">0.33</span>
+                            <span class="tooltip-wrapper">
+                                <span class="tooltip-icon">ℹ</span>
+                                <span class="tooltip-text">Fraction of pulse period where light is ON. 0.33 = light on for 33% of period, off for 67%. Lower duty = more recovery time but less total activation per cycle.</span>
+                            </span>
+                        </label>
+                        <div class="slider-container">
+                            <input type="range" id="duty-cycle" min="0" max="1" value="0.33" step="0.01" oninput="updateDutyCycle(this.value)">
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label>Amplitude: <span class="value-display" id="amplitude-value">0.5</span>
+                            <span class="tooltip-wrapper">
+                                <span class="tooltip-icon">ℹ</span>
+                                <span class="tooltip-text">Maximum light intensity scaling factor. 0.5 = 50% of computed light intensity. Lower values = gentler stimulation, less toxicity, but slower convergence.</span>
+                            </span>
+                        </label>
+                        <div class="slider-container">
+                            <input type="range" id="amplitude" min="0" max="1" value="0.5" step="0.01" oninput="updateAmplitude(this.value)">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="control-panel">
+                <h3 class="collapsible" onclick="toggleCollapse(this)">CMA-ES Optimization</h3>
+                <div class="collapsible-content">
+                    <div class="control-group">
+                        <label>Optimize Pulse Parameters
+                            <span class="tooltip-wrapper">
+                                <span class="tooltip-icon">ℹ</span>
+                                <span class="tooltip-text">Runs evolutionary optimization to find best pulse controller parameters (period, duty cycle, amplitude). Tests multiple combinations and selects the one with highest reward. Note: Simulation pauses during optimization.</span>
+                            </span>
+                        </label>
+                        <button onclick="startOptimization()" style="width: 100%; padding: 10px; background: #4a9eff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; margin-top: 10px;">
+                            Start Optimization
+                        </button>
+                    </div>
+                    <div class="control-group">
+                        <label>Generations: <span class="value-display" id="opt-generations-value">10</span>
+                            <span class="tooltip-wrapper">
+                                <span class="tooltip-icon">ℹ</span>
+                                <span class="tooltip-text">Number of optimization generations to run. Each generation tests multiple parameter combinations. More generations = better results but longer wait time.</span>
+                            </span>
+                        </label>
+                        <div class="slider-container">
+                            <input type="range" id="opt-generations" min="5" max="50" value="10" step="1" oninput="document.getElementById('opt-generations-value').textContent = this.value">
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label>Population Size: <span class="value-display" id="opt-popsize-value">8</span>
+                            <span class="tooltip-wrapper">
+                                <span class="tooltip-icon">ℹ</span>
+                                <span class="tooltip-text">Number of parameter combinations tested per generation. Larger populations explore more thoroughly but take longer. Balance between exploration and speed.</span>
+                            </span>
+                        </label>
+                        <div class="slider-container">
+                            <input type="range" id="opt-popsize" min="4" max="20" value="8" step="1" oninput="document.getElementById('opt-popsize-value').textContent = this.value">
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <div id="opt-status" style="color: #aaa; font-size: 12px; margin-top: 10px;">Ready to optimize</div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -66,7 +476,7 @@
                 this.w = w;
                 this.dt = dt;
                 this.seed = seed;
-                this.rng = this.simpleRNG(seed); // Simple seeded RNG (no full NumPy equivalent)
+                this.rng = this.simpleRNG(seed);
 
                 this.k_on = 2.0;
                 this.k_off = 0.8;
@@ -76,8 +486,9 @@
                 this.max_steps = 200;
                 this.energy_weight = 0.06;
                 this.tox_weight = 0.4;
+                this.health_termination = true;
 
-                // Desensitization parameters (matching test_script2.py)
+                // Desensitization parameters
                 if (enableDesensitization) {
                     this.desense_k = 1.25;
                     this.recover_k = 0.06;
@@ -85,7 +496,6 @@
                 }
 
                 this.track_ie = trackIE;
-
                 this.reset();
             }
 
@@ -98,7 +508,6 @@
             }
 
             normal(mu, sigma) {
-                // Box-Muller for approx normal (seeded via rng)
                 const u1 = this.rng();
                 const u2 = this.rng();
                 return mu + sigma * Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
@@ -111,13 +520,11 @@
                 this.t = 0;
                 this.ie = 0.0;
 
-                // Opsin: normal(0.7, 0.15), clipped [0.2,1]
                 for (let i = 0; i < this.h * this.w; i++) {
                     this.opsin[i] = Math.min(1.0, Math.max(0.2, this.normal(0.7, 0.15)));
                     this.expr[i] = Math.min(0.2, Math.max(0.0, this.normal(0.05, 0.02)));
                 }
 
-                // Initialize sensitivity if desensitization is enabled
                 if (this.desense_k !== undefined) {
                     this.sens = new Float32Array(this.h * this.w).fill(1.0);
                 }
@@ -138,13 +545,11 @@
                         }
                     }
                 }
-                // Add other kinds if needed
                 return tgt;
             }
 
             observe(noise = 0.01, partial = false) {
                 const obs = new Float32Array(this.expr);
-                // Skip partial for simplicity
                 for (let i = 0; i < obs.length; i++) {
                     obs[i] += this.normal(0, noise);
                     obs[i] = Math.min(1, Math.max(0, obs[i]));
@@ -177,13 +582,11 @@
             }
 
             step(light) {
-                // Clip light to [0, 1]
                 for (let i = 0; i < this.h * this.w; i++) {
                     light[i] = Math.min(1, Math.max(0, light[i]));
                 }
 
-                // Desensitization (if enabled)
-                if (this.sens) {
+                if (this.sens && this.desense_k !== undefined) {
                     for (let i = 0; i < this.h * this.w; i++) {
                         const activation = light[i] * this.opsin[i];
                         const d_sens = (-this.desense_k * activation + this.recover_k * (1.0 - this.sens[i])) * this.dt;
@@ -219,8 +622,7 @@
                 tox /= this.h * this.w;
                 if (this.sens) sens_mean /= this.h * this.w;
 
-                // Time-integrated error (if enabled)
-                if (this.track_ie !== undefined) {
+                if (this.track_ie) {
                     this.ie = (this.ie || 0) + mse * this.dt;
                 }
 
@@ -229,17 +631,18 @@
                     : -(mse + this.energy_weight * energy + this.tox_weight * tox);
 
                 this.t++;
-                const done = (this.t >= this.max_steps) || (Math.min(...Array.from(this.health)) <= 0);
+                const health_min = Math.min(...Array.from(this.health));
+                const done = (this.t >= this.max_steps) || (this.health_termination && health_min <= 0);
 
                 const obs = this.observe();
-                const info = {mse, energy, tox, sens: sens_mean, reward, done};
+                const info = {mse, energy, tox, sens: sens_mean, reward, done, health_min};
                 if (this.track_ie) info.ie = this.ie;
 
                 return {obs, reward, done, info};
             }
         }
 
-        // Ported greedy controller
+        // Controllers
         function controllerGreedy(env) {
             const light = new Float32Array(env.h * env.w);
             let max = 0;
@@ -256,32 +659,132 @@
             return light;
         }
 
-        // Three.js Setup
+        function controllerRandom(env) {
+            const light = new Float32Array(env.h * env.w);
+            for (let i = 0; i < env.h * env.w; i++) {
+                light[i] = Math.random();
+            }
+            return light;
+        }
+
+        let pulseParams = { period: 6, duty: 0.33, amplitude: 0.5 };
+        function controllerPulse(env) {
+            const light = new Float32Array(env.h * env.w);
+            const phase = env.t % pulseParams.period;
+            const onSteps = Math.round(pulseParams.duty * pulseParams.period);
+            
+            if (phase < onSteps) {
+                let max = 0;
+                for (let i = 0; i < env.h * env.w; i++) {
+                    const delta = Math.max(0, env.target[i] - env.expr[i]);
+                    light[i] = delta * env.opsin[i] * env.health[i];
+                    if (light[i] > max) max = light[i];
+                }
+                if (max > 0) {
+                    for (let i = 0; i < env.h * env.w; i++) {
+                        light[i] = (light[i] / max) * pulseParams.amplitude;
+                    }
+                }
+            }
+            return light;
+        }
+
+        // Three.js Setup with enhanced visuals
         const container = document.getElementById('dashboard');
         const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
-        camera.position.set(0, 0, 1.5);
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(400, 400);
+        scene.background = new THREE.Color(0x0a0a0a);
+        
+        const dashboardEl = document.getElementById('dashboard');
+        const width = dashboardEl.clientWidth || 500;
+        const height = dashboardEl.clientHeight || 500;
+        
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(width, height);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        // Clear any existing canvas and append the new one
+        const existingCanvas = container.querySelector('canvas');
+        if (existingCanvas) {
+            existingCanvas.remove();
+        }
         container.appendChild(renderer.domElement);
 
-        // Petri dish: circular plane with dynamic texture for expression
-        const geometry = new THREE.CircleGeometry(0.6, 64);
-        const texture = new THREE.DataTexture(new Uint8Array(48 * 48 * 3), 48, 48, THREE.RGBFormat);
-        texture.minFilter = THREE.LinearFilter;
-        texture.magFilter = THREE.LinearFilter;
-        const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
+        const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+        camera.position.set(0, 0, 1.5);
+
+        // Enhanced dish geometry with more detail
+        const geometry = new THREE.CircleGeometry(0.6, 128);
+        
+        // Expression texture (main visualization)
+        const exprTexture = new THREE.DataTexture(new Uint8Array(48 * 48 * 3), 48, 48, THREE.RGBFormat);
+        exprTexture.minFilter = THREE.LinearFilter;
+        exprTexture.magFilter = THREE.LinearFilter;
+        exprTexture.wrapS = THREE.ClampToEdgeWrapping;
+        exprTexture.wrapT = THREE.ClampToEdgeWrapping;
+        
+        // Target overlay texture
+        const targetTexture = new THREE.DataTexture(new Uint8Array(48 * 48 * 4), 48, 48, THREE.RGBAFormat);
+        targetTexture.minFilter = THREE.LinearFilter;
+        targetTexture.magFilter = THREE.LinearFilter;
+        targetTexture.wrapS = THREE.ClampToEdgeWrapping;
+        targetTexture.wrapT = THREE.ClampToEdgeWrapping;
+        
+        // Enhanced material with emissive glow
+        const material = new THREE.MeshStandardMaterial({ 
+            map: exprTexture, 
+            side: THREE.DoubleSide,
+            emissive: new THREE.Color(0x00ff00),
+            emissiveIntensity: 0.3,
+            roughness: 0.7,
+            metalness: 0.1
+        });
+        
         const dish = new THREE.Mesh(geometry, material);
         scene.add(dish);
 
-        // Ambient light for visibility
-        scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+        // Target overlay plane (slightly above dish)
+        const targetMaterial = new THREE.MeshBasicMaterial({ 
+            map: targetTexture,
+            transparent: true,
+            opacity: 0.4,
+            blending: THREE.AdditiveBlending
+        });
+        const targetPlane = new THREE.Mesh(new THREE.CircleGeometry(0.6, 128), targetMaterial);
+        targetPlane.position.z = 0.01;
+        scene.add(targetPlane);
 
-        // Simulation instance (with desensitization enabled)
+        // Enhanced lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+        scene.add(ambientLight);
+        
+        const pointLight1 = new THREE.PointLight(0x4a9eff, 0.6, 2);
+        pointLight1.position.set(0.5, 0.5, 1);
+        scene.add(pointLight1);
+        
+        const pointLight2 = new THREE.PointLight(0x00ff88, 0.4, 2);
+        pointLight2.position.set(-0.5, -0.5, 1);
+        scene.add(pointLight2);
+        
+        // Add subtle rotation animation
+        let rotationSpeed = 0.0005;
+        
+        // Add rim lighting effect
+        const rimGeometry = new THREE.RingGeometry(0.595, 0.605, 64);
+        const rimMaterial = new THREE.MeshBasicMaterial({ 
+            color: 0x4a9eff, 
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.3
+        });
+        const rim = new THREE.Mesh(rimGeometry, rimMaterial);
+        rim.position.z = -0.001;
+        scene.add(rim);
+
+        // Simulation instance
         let env = new PetriDishEnv(48, 48, 0.1, 1, true, true);
         let paused = false;
         let lastStepTime = 0;
-        const stepInterval = 50; // ms between steps (slower for visibility)
+        let stepInterval = 50;
+        let currentController = controllerGreedy;
 
         function updateMetrics(info) {
             document.getElementById('metric-t').textContent = env.t;
@@ -294,8 +797,7 @@
 
         function togglePause() {
             paused = !paused;
-            const btn = document.getElementById('pauseBtn');
-            btn.textContent = paused ? 'Resume' : 'Pause';
+            document.getElementById('pauseBtn').textContent = paused ? 'Resume' : 'Pause';
         }
 
         function resetSim() {
@@ -304,34 +806,300 @@
             document.getElementById('pauseBtn').textContent = 'Pause';
             updateMetrics({mse: 0, energy: 0, tox: 0, reward: 0, sens: 1.0});
             updateTexture();
+            // Reset rotation
+            dish.rotation.z = 0;
+            targetPlane.rotation.z = 0;
         }
 
-        // Update texture based on expr (green high, red low)
         function updateTexture() {
-            const data = texture.image.data;
-            for (let i = 0, j = 0; i < env.h * env.w; i++, j += 3) {
-                const val = env.expr[i];
-                data[j] = (1 - val) * 255;   // R: low expr -> red
-                data[j + 1] = val * 255;     // G: high expr -> green
-                data[j + 2] = 0;             // B: off
+            // Update expression texture with enhanced color mapping
+            const exprData = exprTexture.image.data;
+            const targetData = targetTexture.image.data;
+            
+            for (let i = 0, j = 0, k = 0; i < env.h * env.w; i++, j += 3, k += 4) {
+                const expr = env.expr[i];
+                const target = env.target[i];
+                const health = env.health[i];
+                
+                // Enhanced color mapping with glow effect for high expression
+                const intensity = Math.pow(expr, 0.8); // Gamma correction for better visual
+                const glow = expr > 0.7 ? (expr - 0.7) * 3.33 : 0; // Glow for high expression
+                
+                // Expression color: red (low) -> yellow -> green (high) with glow
+                exprData[j] = Math.min(255, (1 - intensity) * 200 + glow * 100);     // R
+                exprData[j + 1] = Math.min(255, intensity * 255 + glow * 150);      // G
+                exprData[j + 2] = Math.min(255, (intensity < 0.5 ? intensity * 200 : 0) + glow * 50); // B
+                
+                // Health-based dimming (damaged cells appear darker)
+                const healthFactor = 0.5 + health * 0.5;
+                exprData[j] *= healthFactor;
+                exprData[j + 1] *= healthFactor;
+                exprData[j + 2] *= healthFactor;
+                
+                // Target overlay (blue with transparency)
+                targetData[k] = 0;           // R
+                targetData[k + 1] = 100;     // G
+                targetData[k + 2] = 255;     // B (blue)
+                targetData[k + 3] = target * 180; // Alpha (transparency based on target intensity)
             }
-            texture.needsUpdate = true;
+            
+            exprTexture.needsUpdate = true;
+            targetTexture.needsUpdate = true;
+            
+            // Update emissive intensity based on average expression
+            let avgExpr = 0;
+            for (let i = 0; i < env.h * env.w; i++) {
+                avgExpr += env.expr[i];
+            }
+            avgExpr /= (env.h * env.w);
+            material.emissiveIntensity = Math.min(0.5, avgExpr * 0.6);
+        }
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            const dashboardEl = document.getElementById('dashboard');
+            const newWidth = dashboardEl.clientWidth;
+            const newHeight = dashboardEl.clientHeight;
+            camera.aspect = newWidth / newHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(newWidth, newHeight);
+        });
+        
+        // Ensure proper initialization after DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                updateTexture();
+            });
+        } else {
+            updateTexture();
         }
 
-        // Animation loop
+        function toggleCollapse(element) {
+            element.classList.toggle('collapsed');
+            const content = element.nextElementSibling;
+            content.classList.toggle('collapsed');
+        }
+
+        // Control update functions
+        function updateController() {
+            const type = document.getElementById('controller-type').value;
+            if (type === 'greedy') currentController = controllerGreedy;
+            else if (type === 'random') currentController = controllerRandom;
+            else if (type === 'pulse') currentController = controllerPulse;
+        }
+
+        function updateMaxSteps(value) {
+            env.max_steps = parseInt(value);
+            document.getElementById('max-steps-value').textContent = value;
+        }
+
+        function updateStepInterval(value) {
+            stepInterval = parseInt(value);
+            document.getElementById('step-interval-value').textContent = value;
+        }
+
+        function updateHealthTermination() {
+            env.health_termination = document.getElementById('health-termination').checked;
+        }
+
+        function updateDesensitization() {
+            const enabled = document.getElementById('enable-desensitization').checked;
+            if (enabled) {
+                env.desense_k = parseFloat(document.getElementById('desense-k').value);
+                env.recover_k = parseFloat(document.getElementById('recover-k').value);
+                env.sens_floor = parseFloat(document.getElementById('sens-floor').value);
+                if (!env.sens) env.sens = new Float32Array(env.h * env.w).fill(1.0);
+            } else {
+                env.desense_k = undefined;
+                env.recover_k = undefined;
+                env.sens_floor = undefined;
+            }
+        }
+
+        function updateDesenseK(value) {
+            env.desense_k = parseFloat(value);
+            document.getElementById('desense-k-value').textContent = value;
+        }
+
+        function updateRecoverK(value) {
+            env.recover_k = parseFloat(value);
+            document.getElementById('recover-k-value').textContent = value;
+        }
+
+        function updateSensFloor(value) {
+            env.sens_floor = parseFloat(value);
+            document.getElementById('sens-floor-value').textContent = value;
+        }
+
+        function updateToxK(value) {
+            env.tox_k = parseFloat(value);
+            document.getElementById('tox-k-value').textContent = value;
+        }
+
+        function updateKOn(value) {
+            env.k_on = parseFloat(value);
+            document.getElementById('k-on-value').textContent = value;
+        }
+
+        function updateKOff(value) {
+            env.k_off = parseFloat(value);
+            document.getElementById('k-off-value').textContent = value;
+        }
+
+        function updateDiff(value) {
+            env.diff = parseFloat(value);
+            document.getElementById('diff-value').textContent = value;
+        }
+
+        function updatePulsePeriod(value) {
+            pulseParams.period = parseInt(value);
+            document.getElementById('pulse-period-value').textContent = value;
+        }
+
+        function updateDutyCycle(value) {
+            pulseParams.duty = parseFloat(value);
+            document.getElementById('duty-cycle-value').textContent = value;
+        }
+
+        function updateAmplitude(value) {
+            pulseParams.amplitude = parseFloat(value);
+            document.getElementById('amplitude-value').textContent = value;
+        }
+
+        // CMA-ES Optimization (simplified browser version)
+        let isOptimizing = false;
+        async function startOptimization() {
+            if (isOptimizing) {
+                document.getElementById('opt-status').textContent = 'Optimization already running...';
+                return;
+            }
+            
+            isOptimizing = true;
+            const statusEl = document.getElementById('opt-status');
+            statusEl.textContent = 'Starting optimization...';
+            
+            const generations = parseInt(document.getElementById('opt-generations').value);
+            const popsize = parseInt(document.getElementById('opt-popsize').value);
+            
+            // Simple grid search optimization (CMA-ES would require a library)
+            // For now, we'll do a simple parameter sweep
+            let bestParams = { period: 6, duty: 0.33, amplitude: 0.5 };
+            let bestScore = -Infinity;
+            
+            // Temporarily pause simulation
+            const wasPaused = paused;
+            paused = true;
+            
+            try {
+                for (let gen = 0; gen < generations; gen++) {
+                    statusEl.textContent = `Generation ${gen + 1}/${generations}...`;
+                    
+                    // Simple random search (replace with proper CMA-ES if library available)
+                    for (let i = 0; i < popsize; i++) {
+                        const testParams = {
+                            period: Math.floor(Math.random() * 20) + 1,
+                            duty: Math.random(),
+                            amplitude: Math.random()
+                        };
+                        
+                        // Evaluate
+                        const score = await evaluateParams(testParams);
+                        
+                        if (score > bestScore) {
+                            bestScore = score;
+                            bestParams = testParams;
+                        }
+                    }
+                    
+                    // Update UI periodically
+                    if (gen % 2 === 0) {
+                        await new Promise(resolve => setTimeout(resolve, 10));
+                    }
+                }
+                
+                // Apply best parameters
+                pulseParams = bestParams;
+                updatePulsePeriod(bestParams.period);
+                updateDutyCycle(bestParams.duty);
+                updateAmplitude(bestParams.amplitude);
+                
+                statusEl.textContent = `Optimization complete! Best score: ${bestScore.toFixed(4)}`;
+                statusEl.style.color = '#4a9eff';
+                
+            } catch (error) {
+                statusEl.textContent = `Error: ${error.message}`;
+                statusEl.style.color = '#ff4444';
+            } finally {
+                isOptimizing = false;
+                paused = wasPaused;
+            }
+        }
+        
+        async function evaluateParams(params) {
+            // Create a test environment
+            const testEnv = new PetriDishEnv(48, 48, 0.1, 1, true, true);
+            testEnv.max_steps = 100; // Shorter for faster evaluation
+            testEnv.health_termination = false;
+            
+            // Create test controller with these params
+            const testController = (env) => {
+                const light = new Float32Array(env.h * env.w);
+                const phase = env.t % params.period;
+                const onSteps = Math.round(params.duty * params.period);
+                
+                if (phase < onSteps) {
+                    let max = 0;
+                    for (let i = 0; i < env.h * env.w; i++) {
+                        const delta = Math.max(0, env.target[i] - env.expr[i]);
+                        light[i] = delta * env.opsin[i] * env.health[i];
+                        if (light[i] > max) max = light[i];
+                    }
+                    if (max > 0) {
+                        for (let i = 0; i < env.h * env.w; i++) {
+                            light[i] = (light[i] / max) * params.amplitude;
+                        }
+                    }
+                }
+                return light;
+            };
+            
+            // Run episode
+            let totalReward = 0;
+            for (let t = 0; t < testEnv.max_steps; t++) {
+                const light = testController(testEnv);
+                const result = testEnv.step(light);
+                totalReward += result.reward;
+                if (result.done) break;
+            }
+            
+            return totalReward;
+        }
+
+        // Animation loop with enhanced visuals
         function animate(currentTime) {
             requestAnimationFrame(animate);
             
+            // Subtle rotation animation
+            dish.rotation.z += rotationSpeed;
+            targetPlane.rotation.z += rotationSpeed * 0.8; // Slightly different speed for parallax
+            
+            // Pulsing rim light effect
+            const pulse = Math.sin(currentTime * 0.002) * 0.1 + 0.3;
+            rimMaterial.opacity = pulse;
+            
             if (!paused && (currentTime - lastStepTime >= stepInterval)) {
-                const light = controllerGreedy(env);
+                const light = currentController(env);
                 const result = env.step(light);
                 
                 if (!result.done) {
                     updateTexture();
                     updateMetrics(result.info);
                     lastStepTime = currentTime;
+                    
+                    // Dynamic lighting based on expression
+                    const avgExpr = result.info.mse < 0.1 ? 0.8 : 0.4;
+                    pointLight2.intensity = 0.2 + avgExpr * 0.4;
                 } else {
-                    // Episode done - auto reset after a delay
                     setTimeout(() => {
                         resetSim();
                         lastStepTime = performance.now();
@@ -342,9 +1110,11 @@
             renderer.render(scene, camera);
         }
         
-        // Initialize
+        // Initialize - ensure textures are ready first
+        setTimeout(() => {
         updateTexture();
         updateMetrics({mse: 0, energy: 0, tox: 0, reward: 0, sens: 1.0});
+        }, 100);
         animate(performance.now());
     </script>
 </body>

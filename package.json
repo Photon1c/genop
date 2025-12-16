@@ -1,0 +1,19 @@
+{
+  "name": "genop-dashboard",
+  "version": "1.0.0",
+  "description": "Generative Optogenetics Interactive Dashboard",
+  "main": "dashboard.html",
+  "scripts": {
+    "start": "python app.py",
+    "dev": "python app.py"
+  },
+  "keywords": [
+    "optogenetics",
+    "simulation",
+    "dashboard",
+    "interactive"
+  ],
+  "author": "",
+  "license": "MIT"
+}
+

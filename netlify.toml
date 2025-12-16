@@ -1,0 +1,29 @@
+# Netlify configuration for Generative Optogenetics Dashboard
+# Note: Netlify is primarily for static sites. For Flask apps, consider:
+# - Netlify Functions (serverless)
+# - Or deploy as static site (dashboard.html works standalone)
+
+[build]
+  # Since dashboard.html is standalone, we can publish it directly
+  publish = "."
+  command = "echo 'Static site - no build needed'"
+
+[[redirects]]
+  from = "/*"
+  to = "/dashboard.html"
+  status = 200
+
+# For serverless functions (if needed in future)
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# Headers for CORS and security
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
