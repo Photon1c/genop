@@ -25,7 +25,7 @@ This project implements a toy "petri dish" environment where:
 Run with default (hand-tuned) latent controller parameters:
 
 ```bash
-python generative_optogenetics/test_script2.py
+python genop/test_script2.py
 ```
 
 This compares:
@@ -38,7 +38,7 @@ This compares:
 Find optimal controller parameters:
 
 ```bash
-python generative_optogenetics/test_script2.py --optimize --iters 25 --popsize 10
+python genop/test_script2.py --optimize --iters 25 --popsize 10
 ```
 
 Options:
