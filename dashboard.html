@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Genop Dashboard - Optogenetic Simulation</title>
+    <style>
+        body { margin: 0; background: #1a1a1a; font-family: 'Segoe UI', Arial, sans-serif; color: #fff; }
+        #container { max-width: 1200px; margin: 20px auto; padding: 20px; }
+        #dashboard { width: 400px; height: 400px; margin: 0 auto 20px; border: 2px solid #444; border-radius: 8px; position: relative; background: #000; }
+        canvas { width: 100%; height: 100%; display: block; }
+        #controls { position: absolute; bottom: 10px; left: 10px; display: flex; gap: 10px; }
+        #controls button { padding: 8px 16px; background: #4a9eff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+        #controls button:hover { background: #3a8eef; }
+        #metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 20px; }
+        .metric-card { background: #2a2a2a; padding: 15px; border-radius: 8px; border: 1px solid #444; }
+        .metric-label { font-size: 12px; color: #aaa; text-transform: uppercase; margin-bottom: 5px; }
+        .metric-value { font-size: 24px; font-weight: bold; color: #4a9eff; }
+        h1 { text-align: center; margin-bottom: 10px; color: #4a9eff; }
+        .subtitle { text-align: center; color: #aaa; margin-bottom: 30px; font-size: 14px; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+    <div id="container">
+        <h1>Generative Optogenetics Dashboard</h1>
+        <p class="subtitle">Real-time visualization of petri dish expression dynamics</p>
+        <div id="dashboard">
+            <div id="controls">
+                <button id="resetBtn" onclick="resetSim()">Reset</button>
+                <button id="pauseBtn" onclick="togglePause()">Pause</button>
+            </div>
+        </div>
+        <div id="metrics">
+            <div class="metric-card">
+                <div class="metric-label">Time Step</div>
+                <div class="metric-value" id="metric-t">0</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">MSE</div>
+                <div class="metric-value" id="metric-mse">0.0000</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Energy</div>
+                <div class="metric-value" id="metric-energy">0.000</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Toxicity</div>
+                <div class="metric-value" id="metric-tox">0.000</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Reward</div>
+                <div class="metric-value" id="metric-reward">0.0000</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Sensitivity</div>
+                <div class="metric-value" id="metric-sens">1.000</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Ported PetriDishEnv class to JS (with optional desensitization)
+        class PetriDishEnv {
+            constructor(h = 48, w = 48, dt = 0.1, seed = 0, enableDesensitization = true, trackIE = true) {
+                this.h = h;
+                this.w = w;
+                this.dt = dt;
+                this.seed = seed;
+                this.rng = this.simpleRNG(seed); // Simple seeded RNG (no full NumPy equivalent)
+
+                this.k_on = 2.0;
+                this.k_off = 0.8;
+                this.sat = 0.7;
+                this.diff = 0.15;
+                this.tox_k = 0.25;
+                this.max_steps = 200;
+                this.energy_weight = 0.06;
+                this.tox_weight = 0.4;
+
+                // Desensitization parameters (matching test_script2.py)
+                if (enableDesensitization) {
+                    this.desense_k = 1.25;
+                    this.recover_k = 0.06;
+                    this.sens_floor = 0.15;
+                }
+
+                this.track_ie = trackIE;
+
+                this.reset();
+            }
+
+            simpleRNG(seed) {
+                let state = seed;
+                return () => {
+                    state = (state * 1664525 + 1013904223) % 4294967296;
+                    return state / 4294967296;
+                };
+            }
+
+            normal(mu, sigma) {
+                // Box-Muller for approx normal (seeded via rng)
+                const u1 = this.rng();
+                const u2 = this.rng();
+                return mu + sigma * Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+            }
+
+            reset() {
+                this.opsin = new Float32Array(this.h * this.w);
+                this.expr = new Float32Array(this.h * this.w);
+                this.health = new Float32Array(this.h * this.w).fill(1.0);
+                this.t = 0;
+                this.ie = 0.0;
+
+                // Opsin: normal(0.7, 0.15), clipped [0.2,1]
+                for (let i = 0; i < this.h * this.w; i++) {
+                    this.opsin[i] = Math.min(1.0, Math.max(0.2, this.normal(0.7, 0.15)));
+                    this.expr[i] = Math.min(0.2, Math.max(0.0, this.normal(0.05, 0.02)));
+                }
+
+                // Initialize sensitivity if desensitization is enabled
+                if (this.desense_k !== undefined) {
+                    this.sens = new Float32Array(this.h * this.w).fill(1.0);
+                }
+
+                this.target = this.makeTarget("ring");
+                return this.observe();
+            }
+
+            makeTarget(kind) {
+                const tgt = new Float32Array(this.h * this.w);
+                if (kind === "ring") {
+                    for (let y = 0; y < this.h; y++) {
+                        for (let x = 0; x < this.w; x++) {
+                            const nx = (x / this.w) * 2 - 1;
+                            const ny = (y / this.h) * 2 - 1;
+                            const r = Math.sqrt(nx * nx + ny * ny);
+                            tgt[y * this.w + x] = Math.exp(-Math.pow(r - 0.55, 2) / (2 * Math.pow(0.07, 2)));
+                        }
+                    }
+                }
+                // Add other kinds if needed
+                return tgt;
+            }
+
+            observe(noise = 0.01, partial = false) {
+                const obs = new Float32Array(this.expr);
+                // Skip partial for simplicity
+                for (let i = 0; i < obs.length; i++) {
+                    obs[i] += this.normal(0, noise);
+                    obs[i] = Math.min(1, Math.max(0, obs[i]));
+                }
+                return obs;
+            }
+
+            getIndex(y, x) {
+                return y * this.w + x;
+            }
+
+            laplacian(arr) {
+                const lap = new Float32Array(this.h * this.w);
+                for (let y = 0; y < this.h; y++) {
+                    for (let x = 0; x < this.w; x++) {
+                        const idx = this.getIndex(y, x);
+                        let sum = 0;
+                        if (y > 0) sum += arr[this.getIndex(y-1, x)];
+                        else sum += arr[idx];
+                        if (y < this.h-1) sum += arr[this.getIndex(y+1, x)];
+                        else sum += arr[idx];
+                        if (x > 0) sum += arr[this.getIndex(y, x-1)];
+                        else sum += arr[idx];
+                        if (x < this.w-1) sum += arr[this.getIndex(y, x+1)];
+                        else sum += arr[idx];
+                        lap[idx] = sum - 4 * arr[idx];
+                    }
+                }
+                return lap;
+            }
+
+            step(light) {
+                // Clip light to [0, 1]
+                for (let i = 0; i < this.h * this.w; i++) {
+                    light[i] = Math.min(1, Math.max(0, light[i]));
+                }
+
+                // Desensitization (if enabled)
+                if (this.sens) {
+                    for (let i = 0; i < this.h * this.w; i++) {
+                        const activation = light[i] * this.opsin[i];
+                        const d_sens = (-this.desense_k * activation + this.recover_k * (1.0 - this.sens[i])) * this.dt;
+                        this.sens[i] = Math.max(this.sens_floor, Math.min(1.0, this.sens[i] + d_sens));
+                    }
+                }
+
+                const drive = new Float32Array(this.h * this.w);
+                const d_expr = new Float32Array(this.h * this.w);
+
+                for (let i = 0; i < this.h * this.w; i++) {
+                    const opsin_eff = this.sens ? (this.opsin[i] * this.sens[i]) : this.opsin[i];
+                    drive[i] = (light[i] * opsin_eff) / (this.sat + light[i] * opsin_eff + 1e-8);
+                    d_expr[i] = (this.k_on * drive[i] - this.k_off * this.expr[i]) * this.dt;
+                }
+
+                const lap = this.laplacian(this.expr);
+                for (let i = 0; i < this.h * this.w; i++) {
+                    d_expr[i] += this.diff * lap[i] * this.dt;
+                    this.expr[i] = Math.min(1, Math.max(0, this.expr[i] + d_expr[i]));
+                    this.health[i] = Math.min(1, Math.max(0, this.health[i] - this.tox_k * light[i] * this.dt));
+                }
+
+                let mse = 0, energy = 0, tox = 0, sens_mean = 1.0;
+                for (let i = 0; i < this.h * this.w; i++) {
+                    mse += Math.pow(this.expr[i] - this.target[i], 2);
+                    energy += light[i];
+                    tox += 1 - this.health[i];
+                    if (this.sens) sens_mean += this.sens[i];
+                }
+                mse /= this.h * this.w;
+                energy /= this.h * this.w;
+                tox /= this.h * this.w;
+                if (this.sens) sens_mean /= this.h * this.w;
+
+                // Time-integrated error (if enabled)
+                if (this.track_ie !== undefined) {
+                    this.ie = (this.ie || 0) + mse * this.dt;
+                }
+
+                const reward = this.track_ie 
+                    ? -(mse * this.dt + this.energy_weight * energy * this.dt + this.tox_weight * tox * this.dt)
+                    : -(mse + this.energy_weight * energy + this.tox_weight * tox);
+
+                this.t++;
+                const done = (this.t >= this.max_steps) || (Math.min(...Array.from(this.health)) <= 0);
+
+                const obs = this.observe();
+                const info = {mse, energy, tox, sens: sens_mean, reward, done};
+                if (this.track_ie) info.ie = this.ie;
+
+                return {obs, reward, done, info};
+            }
+        }
+
+        // Ported greedy controller
+        function controllerGreedy(env) {
+            const light = new Float32Array(env.h * env.w);
+            let max = 0;
+            for (let i = 0; i < env.h * env.w; i++) {
+                const delta = Math.max(0, env.target[i] - env.expr[i]);
+                light[i] = delta * env.opsin[i] * env.health[i];
+                if (light[i] > max) max = light[i];
+            }
+            if (max > 0) {
+                for (let i = 0; i < env.h * env.w; i++) {
+                    light[i] /= max;
+                }
+            }
+            return light;
+        }
+
+        // Three.js Setup
+        const container = document.getElementById('dashboard');
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+        camera.position.set(0, 0, 1.5);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(400, 400);
+        container.appendChild(renderer.domElement);
+
+        // Petri dish: circular plane with dynamic texture for expression
+        const geometry = new THREE.CircleGeometry(0.6, 64);
+        const texture = new THREE.DataTexture(new Uint8Array(48 * 48 * 3), 48, 48, THREE.RGBFormat);
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
+        const dish = new THREE.Mesh(geometry, material);
+        scene.add(dish);
+
+        // Ambient light for visibility
+        scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+
+        // Simulation instance (with desensitization enabled)
+        let env = new PetriDishEnv(48, 48, 0.1, 1, true, true);
+        let paused = false;
+        let lastStepTime = 0;
+        const stepInterval = 50; // ms between steps (slower for visibility)
+
+        function updateMetrics(info) {
+            document.getElementById('metric-t').textContent = env.t;
+            document.getElementById('metric-mse').textContent = info.mse.toFixed(4);
+            document.getElementById('metric-energy').textContent = info.energy.toFixed(3);
+            document.getElementById('metric-tox').textContent = info.tox.toFixed(3);
+            document.getElementById('metric-reward').textContent = info.reward.toFixed(4);
+            document.getElementById('metric-sens').textContent = (info.sens || 1.0).toFixed(3);
+        }
+
+        function togglePause() {
+            paused = !paused;
+            const btn = document.getElementById('pauseBtn');
+            btn.textContent = paused ? 'Resume' : 'Pause';
+        }
+
+        function resetSim() {
+            env.reset();
+            paused = false;
+            document.getElementById('pauseBtn').textContent = 'Pause';
+            updateMetrics({mse: 0, energy: 0, tox: 0, reward: 0, sens: 1.0});
+            updateTexture();
+        }
+
+        // Update texture based on expr (green high, red low)
+        function updateTexture() {
+            const data = texture.image.data;
+            for (let i = 0, j = 0; i < env.h * env.w; i++, j += 3) {
+                const val = env.expr[i];
+                data[j] = (1 - val) * 255;   // R: low expr -> red
+                data[j + 1] = val * 255;     // G: high expr -> green
+                data[j + 2] = 0;             // B: off
+            }
+            texture.needsUpdate = true;
+        }
+
+        // Animation loop
+        function animate(currentTime) {
+            requestAnimationFrame(animate);
+            
+            if (!paused && (currentTime - lastStepTime >= stepInterval)) {
+                const light = controllerGreedy(env);
+                const result = env.step(light);
+                
+                if (!result.done) {
+                    updateTexture();
+                    updateMetrics(result.info);
+                    lastStepTime = currentTime;
+                } else {
+                    // Episode done - auto reset after a delay
+                    setTimeout(() => {
+                        resetSim();
+                        lastStepTime = performance.now();
+                    }, 2000);
+                }
+            }
+            
+            renderer.render(scene, camera);
+        }
+        
+        // Initialize
+        updateTexture();
+        updateMetrics({mse: 0, energy: 0, tox: 0, reward: 0, sens: 1.0});
+        animate(performance.now());
+    </script>
+</body>
+</html>
