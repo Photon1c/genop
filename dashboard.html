@@ -32,8 +32,44 @@
         .metric-card { background: #2a2a2a; padding: 15px; border-radius: 8px; border: 1px solid #444; }
         .metric-label { font-size: 12px; color: #aaa; text-transform: uppercase; margin-bottom: 5px; display: flex; align-items: center; justify-content: space-between; }
         .metric-value { font-size: 24px; font-weight: bold; color: #4a9eff; }
-        h1 { text-align: center; margin-bottom: 10px; color: #4a9eff; }
+        h1 { text-align: center; margin-bottom: 10px; color: #4a9eff; position: relative; }
         .subtitle { text-align: center; color: #aaa; margin-bottom: 30px; font-size: 14px; }
+        .github-link {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            background: #2a2a2a;
+            color: #4a9eff;
+            text-decoration: none;
+            border: 1px solid #4a9eff;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            z-index: 100;
+        }
+        .github-link:hover {
+            background: #4a9eff;
+            color: #fff;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(74, 158, 255, 0.4);
+        }
+        .github-link::before {
+            content: "🔗";
+            font-size: 16px;
+        }
+        @media (max-width: 768px) {
+            .github-link {
+                position: static;
+                display: inline-block;
+                margin: 10px auto;
+                width: fit-content;
+            }
+        }
         
         /* Control panels */
         #control-panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-top: 20px; }
@@ -56,7 +92,11 @@
         .collapsible-content.collapsed { max-height: 0; }
         
         /* Tooltip styles */
-        .tooltip-wrapper { position: relative; display: inline-block; }
+        .tooltip-wrapper { 
+            position: relative; 
+            display: inline-block; 
+            z-index: 1;
+        }
         .tooltip-icon { 
             display: inline-block; 
             width: 16px; 
@@ -71,44 +111,60 @@
             cursor: help; 
             margin-left: 6px;
             vertical-align: middle;
-            transition: background 0.2s;
+            transition: background 0.2s, transform 0.2s;
         }
-        .tooltip-icon:hover { background: #3a8eef; }
+        .tooltip-icon:hover { 
+            background: #3a8eef; 
+            transform: scale(1.1);
+        }
         .tooltip-text {
             visibility: hidden;
             opacity: 0;
-            position: absolute;
-            z-index: 1000;
-            bottom: 125%;
-            left: 50%;
-            transform: translateX(-50%);
+            position: fixed;
+            z-index: 10000;
             background: #2a2a2a;
             color: #fff;
-            padding: 10px 14px;
-            border-radius: 6px;
+            padding: 12px 16px;
+            border-radius: 8px;
             font-size: 12px;
-            line-height: 1.5;
+            line-height: 1.6;
             white-space: normal;
-            width: 250px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            width: 280px;
+            max-width: 90vw;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.7), 0 0 0 1px rgba(74, 158, 255, 0.3);
             border: 1px solid #4a9eff;
             pointer-events: none;
-            transition: opacity 0.3s, visibility 0.3s;
+            transition: opacity 0.2s, visibility 0.2s, transform 0.2s;
+            transform: translate(-50%, -10px) scale(0.95);
+            transform-origin: bottom center;
         }
-        .tooltip-text::after {
+        .tooltip-text::before {
             content: "";
             position: absolute;
-            top: 100%;
+            bottom: -6px;
             left: 50%;
             transform: translateX(-50%);
             border: 6px solid transparent;
             border-top-color: #4a9eff;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
         }
         .tooltip-wrapper:hover .tooltip-text {
             visibility: visible;
             opacity: 1;
+            transform: translate(-50%, -10px) scale(1);
         }
         .control-group label { display: flex; align-items: center; flex-wrap: wrap; }
+        .control-panel { overflow: visible; }
+        .metric-card { overflow: visible; position: relative; }
+        
+        /* Enhanced visual effects */
+        @keyframes pulse-glow {
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 0.6; }
+        }
+        .glow-effect {
+            animation: pulse-glow 2s ease-in-out infinite;
+        }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <!-- Optional: CMA-ES for browser-based optimization -->
@@ -116,6 +172,7 @@
 </head>
 <body>
     <div id="container">
+        <a href="https://generativeoptogenetics.netlify.app/" target="_blank" rel="noopener noreferrer" class="github-link">GitHub Repo</a>
         <h1>Generative Optogenetics Dashboard</h1>
         <p class="subtitle">Real-time visualization of petri dish expression dynamics</p>
         
@@ -816,43 +873,85 @@
             const exprData = exprTexture.image.data;
             const targetData = targetTexture.image.data;
             
+            let maxExpr = 0;
+            let avgExpr = 0;
+            
             for (let i = 0, j = 0, k = 0; i < env.h * env.w; i++, j += 3, k += 4) {
                 const expr = env.expr[i];
                 const target = env.target[i];
                 const health = env.health[i];
                 
-                // Enhanced color mapping with glow effect for high expression
-                const intensity = Math.pow(expr, 0.8); // Gamma correction for better visual
-                const glow = expr > 0.7 ? (expr - 0.7) * 3.33 : 0; // Glow for high expression
+                if (expr > maxExpr) maxExpr = expr;
+                avgExpr += expr;
                 
-                // Expression color: red (low) -> yellow -> green (high) with glow
-                exprData[j] = Math.min(255, (1 - intensity) * 200 + glow * 100);     // R
-                exprData[j + 1] = Math.min(255, intensity * 255 + glow * 150);      // G
-                exprData[j + 2] = Math.min(255, (intensity < 0.5 ? intensity * 200 : 0) + glow * 50); // B
+                // Enhanced color mapping with glow effect for high expression
+                const intensity = Math.pow(expr, 0.75); // Gamma correction for better visual
+                const glow = expr > 0.6 ? Math.pow((expr - 0.6) / 0.4, 2) * 0.8 : 0; // Stronger glow for high expression
+                
+                // Expression color: red (low) -> orange -> yellow -> green (high) with glow
+                let r, g, b;
+                if (intensity < 0.33) {
+                    // Red to orange
+                    const t = intensity / 0.33;
+                    r = 200 + (55 * t);
+                    g = 50 + (100 * t);
+                    b = 0;
+                } else if (intensity < 0.66) {
+                    // Orange to yellow
+                    const t = (intensity - 0.33) / 0.33;
+                    r = 255;
+                    g = 150 + (105 * t);
+                    b = 0 + (100 * t);
+                } else {
+                    // Yellow to green
+                    const t = (intensity - 0.66) / 0.34;
+                    r = 255 - (255 * t);
+                    g = 255;
+                    b = 100 - (100 * t);
+                }
+                
+                // Add glow effect
+                const glowIntensity = glow * 0.5;
+                exprData[j] = Math.min(255, r + glowIntensity * 100);     // R
+                exprData[j + 1] = Math.min(255, g + glowIntensity * 150); // G
+                exprData[j + 2] = Math.min(255, b + glowIntensity * 80);  // B
                 
                 // Health-based dimming (damaged cells appear darker)
-                const healthFactor = 0.5 + health * 0.5;
+                const healthFactor = 0.4 + health * 0.6;
                 exprData[j] *= healthFactor;
                 exprData[j + 1] *= healthFactor;
                 exprData[j + 2] *= healthFactor;
                 
-                // Target overlay (blue with transparency)
+                // Target overlay (cyan/blue with pulsing effect)
+                const targetPulse = 0.7 + 0.3 * Math.sin(Date.now() * 0.003);
                 targetData[k] = 0;           // R
-                targetData[k + 1] = 100;     // G
+                targetData[k + 1] = 150 + (50 * targetPulse);     // G (cyan)
                 targetData[k + 2] = 255;     // B (blue)
-                targetData[k + 3] = target * 180; // Alpha (transparency based on target intensity)
+                targetData[k + 3] = target * 200 * targetPulse; // Alpha with pulse
             }
+            
+            avgExpr /= (env.h * env.w);
             
             exprTexture.needsUpdate = true;
             targetTexture.needsUpdate = true;
             
-            // Update emissive intensity based on average expression
-            let avgExpr = 0;
-            for (let i = 0; i < env.h * env.w; i++) {
-                avgExpr += env.expr[i];
+            // Update emissive intensity and color based on expression
+            const emissiveIntensity = Math.min(0.7, avgExpr * 0.8);
+            material.emissiveIntensity = emissiveIntensity;
+            
+            // Dynamic emissive color based on average expression
+            if (avgExpr > 0.5) {
+                material.emissive.setHex(0x00ff88); // Bright green
+            } else if (avgExpr > 0.3) {
+                material.emissive.setHex(0x88ff00); // Yellow-green
+            } else {
+                material.emissive.setHex(0xff8800); // Orange
             }
-            avgExpr /= (env.h * env.w);
-            material.emissiveIntensity = Math.min(0.5, avgExpr * 0.6);
+            
+            // Update lighting based on expression
+            const lightIntensity = 0.3 + avgExpr * 0.5;
+            pointLight1.intensity = lightIntensity;
+            pointLight2.intensity = lightIntensity * 0.7;
         }
         
         // Handle window resize
@@ -878,6 +977,69 @@
             element.classList.toggle('collapsed');
             const content = element.nextElementSibling;
             content.classList.toggle('collapsed');
+        }
+        
+        // Dynamic tooltip positioning
+        function setupTooltips() {
+            const tooltipWrappers = document.querySelectorAll('.tooltip-wrapper');
+            tooltipWrappers.forEach(wrapper => {
+                const icon = wrapper.querySelector('.tooltip-icon');
+                const tooltip = wrapper.querySelector('.tooltip-text');
+                
+                if (!icon || !tooltip) return;
+                
+                const updateTooltipPosition = () => {
+                    const iconRect = icon.getBoundingClientRect();
+                    const tooltipRect = tooltip.getBoundingClientRect();
+                    const viewportWidth = window.innerWidth;
+                    const viewportHeight = window.innerHeight;
+                    
+                    // Calculate position
+                    let left = iconRect.left + iconRect.width / 2;
+                    let top = iconRect.top - tooltipRect.height - 10;
+                    
+                    // Adjust if tooltip goes off-screen
+                    if (left - tooltipRect.width / 2 < 10) {
+                        left = tooltipRect.width / 2 + 10;
+                    } else if (left + tooltipRect.width / 2 > viewportWidth - 10) {
+                        left = viewportWidth - tooltipRect.width / 2 - 10;
+                    }
+                    
+                    if (top < 10) {
+                        // Show below instead
+                        top = iconRect.bottom + 10;
+                        tooltip.style.transform = 'translate(-50%, 0) scale(1)';
+                        tooltip.style.transformOrigin = 'top center';
+                        tooltip.querySelector('::before')?.remove();
+                        if (!tooltip.querySelector('::after')) {
+                            const arrow = document.createElement('div');
+                            arrow.style.cssText = 'position: absolute; top: -6px; left: 50%; transform: translateX(-50%); border: 6px solid transparent; border-bottom-color: #4a9eff;';
+                            tooltip.appendChild(arrow);
+                        }
+                    } else {
+                        tooltip.style.transform = 'translate(-50%, -10px) scale(1)';
+                        tooltip.style.transformOrigin = 'bottom center';
+                    }
+                    
+                    tooltip.style.left = left + 'px';
+                    tooltip.style.top = top + 'px';
+                };
+                
+                icon.addEventListener('mouseenter', () => {
+                    updateTooltipPosition();
+                });
+                
+                wrapper.addEventListener('mouseenter', () => {
+                    updateTooltipPosition();
+                });
+            });
+        }
+        
+        // Initialize tooltips after DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', setupTooltips);
+        } else {
+            setupTooltips();
         }
 
         // Control update functions
