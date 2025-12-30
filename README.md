@@ -1,6 +1,8 @@
 # Generative Optogenetics: Latent Controller + CMA-ES
 ## AI-Controller In Deep-Dev
 
+[Now live](https://generativeoptogenetics.netlify.app/)
+
 ![cover](media/cover.png)
 
 A minimal sandbox for **generative optogenetic control** with opsin desensitization, time-integrated error objectives, and evolutionary optimization.
@@ -190,5 +192,6 @@ This creates a **non-trivial but learnable** control problem where AI-driven pol
 - Introduce spatial "maintenance halos" (diffusion-based control)
 - Wire into PPO/other RL algorithms (learned policies vs evolutionary search)
 - Multi-objective optimization (Pareto fronts for energy vs error vs toxicity)
+
 
 
